@@ -503,16 +503,19 @@ class Data(object):
         else:
             self._model = model
         self._manager = manager
-        self._ooop = self._manager._ooop
+        self._ooop = manager._ooop
         self._copy = copy
+        ## XXXvlab: self._data contains 2 types... a dict or a Data object.
         self._data = data
         self._fields = fields
+        ## XXXvlab: this cache is local to the Data object... why ?
         self.INSTANCES = {}
         if ref:
             self._ref = ref
         else:
             self._ref = -id(self)
-        
+
+        ## XXXvlab: this cache is local to the Data object... why ?
         self.INSTANCES['%s:%s' % (self._model, self._ref)] = self
         
         if self._model in self._ooop.fields.keys():
@@ -585,6 +588,8 @@ class Data(object):
             else:
                 self._data = data
 
+        ## XXXvlab: yuck, this makes as many read request that there are fields in the
+        ## current object. VERY SLOW.
         for i in self.fields.values():
             name, ttype, relation = i['name'], i['ttype'], i['relation']
             if not ttype in ('one2many', 'many2one', 'many2many'):
@@ -615,6 +620,8 @@ class Data(object):
             return self.__dict__[field]
 
         try:
+            ## XXXvlab: self._data is sometimes a dict, sometimes a Data object
+            ## which is not subscriptable.
             data = {field: self._data[field]}
         except:
             if field in self.fields.keys():
@@ -623,15 +630,24 @@ class Data(object):
             if self._ooop.exe:
                 return lambda *a: self._ooop.execute(
                     self._model, field, [self._ref], *a)
+
+        ## XXXvlab: when is this ``name`` different from ``field`` ?
         try:
             name = self.fields[field]['name']
         except:
             raise NameError('field \'%s\' is not defined' % field)
         ttype = self.fields[field]['ttype']
         relation = self.fields[field]['relation']
+
+        ## XXXvlab: data[name] should be put in a variable as it is
+        ## the only value used.
         if ttype == 'many2one':
             if data[name]: # TODO: review this
                 self.__dict__['__%s' % name] = data[name]
+                ## XXXvlab: this key construction should be taken out
+                ## in a function to ensure the same build of the key.
+                ## XXXvlab: this caching mecanism should be taken out
+                ## and explicited separately from other concerns.
                 key = '%s:%i' % (relation, data[name][0])
                 if key in self.INSTANCES.keys():
                     self.__dict__[name] = self.INSTANCES[key]
@@ -648,6 +664,7 @@ class Data(object):
                 self.__dict__['__%s' % name] = data[name]
                 self.__dict__[name] = List(Manager(relation, self._ooop),
                                            data=self, model=relation)
+                ## XXXvlab: use enumerate !
                 for i in xrange(len(data[name])):
                     key = '%s:%i' % (relation, data[name][i])
                     if key in self.INSTANCES.keys():
