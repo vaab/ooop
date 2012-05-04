@@ -32,6 +32,12 @@ try:
 except:
     pydot = False
 
+# check if pyro is installed
+try:
+    import Pyro.core
+except:
+    pyro = False
+
 __author__ = "Pedro Gracia <pedro.gracia@impulzia.com>"
 __license__ = "GPLv3+"
 __version__ = "0.2.3"
@@ -111,13 +117,14 @@ class objectsock_mock():
 class OOOP:
     """ Main class to manage xml-rpc communication with openerp-server """
     def __init__(self, user='admin', pwd='admin', dbname='openerp', 
-                 uri='http://localhost', port=8069, debug=False, 
+                 uri='http://localhost', port=8069, protocol='xmlrpc', debug=False, 
                  exe=False, active=True, context=None, lang=None, **kwargs):
         self.user = user       # default: 'admin'
         self.pwd = pwd         # default: 'admin'
         self.dbname = dbname   # default: 'openerp'
         self.uri = uri
         self.port = port
+        self.protocol = protocol   # default: 'xmlrpc'
         self.debug = debug
         self.exe = exe
         self.active = active
@@ -127,6 +134,7 @@ class OOOP:
         self.uid = None
         self.models = {}
         self.fields = {}
+        self.proxy = False
 
         self.context = context if context else {}
 
@@ -138,7 +146,10 @@ class OOOP:
             self.uid = kwargs['uid']
             self.objectsock = objectsock_mock(kwargs['parent'], kwargs['cr'])
         else:
-            self.connect()
+            if protocol == 'pyro':
+                self.connect_pyro()
+            else:
+                self.connect()
         
         self.load_models()
 
@@ -152,10 +163,21 @@ class OOOP:
         self.commonsock = xmlrpclib.ServerProxy('%s:%i/xmlrpc/common' % (self.uri, self.port))
         return self.commonsock.login(dbname, user, pwd)
 
+    def connect_pyro(self):
+        """login and sockets to pyro services: common, object and report"""
+        url = 'PYROLOC://%s:%s/rpc' % (self.uri,self.port)
+        self.proxy =  Pyro.core.getProxyForURI(url)
+        self.uid = self.proxy.dispatch( 'common', 'login', self.dbname, self.user, self.pwd)
+        self.reportsock = False
+
     def execute(self, model, *args):
         if self.debug:
             print "DEBUG [execute]:", model, args
-        return self.objectsock.execute(self.dbname, self.uid, self.pwd, model, *args)
+        if self.protocol == 'pyro':
+            result = self.proxy.dispatch( 'object', 'execute', self.dbname, self.uid, self.pwd, model, *args)
+        else:
+            result = self.objectsock.execute(self.dbname, self.uid, self.pwd, model, *args)
+        return result
 
     def create(self, model, data):
         """ create a new register """
@@ -163,37 +185,61 @@ class OOOP:
             print "DEBUG [create]:", model, data
         if 'id' in data:
             del data['id']
-        return self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'create', data, self.context)
+        if self.protocol == 'pyro':
+            result = self.proxy.dispatch( 'object', 'execute', self.dbname, self.uid, self.pwd, model, 'create', data, self.context)
+        else:
+            result = self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'create', data, self.context)
+        return result
 
     def unlink(self, model, ids):
         """ remove register """
         if self.debug:
             print "DEBUG [unlink]:", model, ids
-        return self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'unlink', ids, self.context)
+        if self.protocol == 'pyro':
+            result = self.proxy.dispatch( 'object', 'execute', self.dbname, self.uid, self.pwd, model, 'unlink', ids, self.context)
+        else:
+            result = self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'unlink', ids, self.context)
+        return result
 
     def write(self, model, ids, value):
         """ update register """
         if self.debug:
             print "DEBUG [write]:", model, ids, value
-        return self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'write', ids, value, self.context)
+        if self.protocol == 'pyro':
+            result = self.proxy.dispatch( 'object', 'execute', self.dbname, self.uid, self.pwd, model, 'write', ids, value, self.context)
+        else:
+            result = self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'write', ids, value, self.context)
+        return result
 
     def read(self, model, ids, fields=[]):
         """ update register """
         if self.debug:
             print "DEBUG [read]:", model, ids, fields
-        return self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'read', ids, fields, self.context)
+        if self.protocol == 'pyro':
+            result = self.proxy.dispatch( 'object', 'execute', self.dbname, self.uid, self.pwd, model, 'read', ids, fields, self.context)
+        else:
+            result = self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'read', ids, fields, self.context)
+        return result
 
     def read_all(self, model, fields=[]):
         """ update register """
         if self.debug:
             print "DEBUG [read_all]:", model, fields
-        return self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'read', self.all(model), fields, self.context)
+        if self.protocol == 'pyro':
+            result = self.proxy.dispatch( 'object', 'execute', self.dbname, self.uid, self.pwd, model, 'read', self.all(model), fields, self.context)
+        else:
+            result = self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'read', self.all(model), fields, self.context)
+        return result
 
     def search(self, model, query, offset=0, limit=999, order=''):
         """ return ids that match with 'query' """
         if self.debug:
             print "DEBUG [search]:", model, query, offset, limit, order
-        return self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'search', query, offset, limit, order, self.context)
+        if self.protocol == 'pyro':
+            result = self.proxy.dispatch( 'object', 'execute', self.dbname, self.uid, self.pwd, model, 'search', query, offset, limit, order, self.context)
+        else:
+            result = self.objectsock.execute(self.dbname, self.uid, self.pwd, model, 'search', query, offset, limit, order, self.context)
+        return result
 
     # TODO: verify if remove this
     def custom_execute(self, model, ids, remote_method, data):
