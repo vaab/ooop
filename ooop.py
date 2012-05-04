@@ -588,14 +588,16 @@ class Data(object):
             else:
                 self._data = data
 
-        ## XXXvlab: yuck, this makes as many read request that there are fields in the
-        ## current object. VERY SLOW.
-        for i in self.fields.values():
-            name, ttype, relation = i['name'], i['ttype'], i['relation']
-            if not ttype in ('one2many', 'many2one', 'many2many'):
-                hasattr(self,name) # use __getattr__ to trigger load
-            else:
-                pass # TODO: to load related fields as proxies to objects
+        simple_fields = [
+            f["name"]
+            for f in self.fields.values()
+            if f['ttype'] not in ('one2many', 'many2one', 'many2many')]
+
+        self._data_fields = self._ooop.read(
+            self._model, self._ref)
+
+        for f in simple_fields:
+            hasattr(self, f)
 
     def __print__(self, sort=True):
         if sort:
@@ -623,8 +625,10 @@ class Data(object):
             ## XXXvlab: self._data is sometimes a dict, sometimes a Data object
             ## which is not subscriptable.
             data = {field: self._data[field]}
-        except:
-            if field in self.fields.keys():
+        except Exception, e:
+            if field in self._data_fields:
+                data = self._data_fields
+            elif field in self.fields.keys():
                 data = self._ooop.read(self._model, self._ref, [field])
             # Try a custom function
             if self._ooop.exe:
